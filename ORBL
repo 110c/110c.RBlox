@@ -1,0 +1,429 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+local hipHeightValue = 2
+local speedValue = 16
+local flyValue = 0
+
+local namesActive = false
+local distanceActive = false
+local outlinesActive = false
+
+local teleportClickActive = false
+local teleportMode = "LeftClick"  -- "LeftClick" or "RightClick"
+
+
+local nameBillboards = {}
+local distanceBillboards = {}
+local outlineHighlights = {}
+local espLink = nil
+local hipLoop = nil
+local speedLoop = nil
+local flyConnection = nil
+local teleportConn = nil
+
+local function getPlayerRole(plr)
+    if not plr.Character then return "Innocent" end
+    local backpack = plr:FindFirstChild("Backpack")
+    local char = plr.Character
+    if backpack and (backpack:FindFirstChild("Knife") or char:FindFirstChild("Knife")) then return "Murderer" end
+    if backpack and (backpack:FindFirstChild("Gun") or char:FindFirstChild("Gun")) then return "Sheriff" end
+    return "Innocent"
+end
+
+local function isPlayerAlive(plr)
+    local char = plr.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    return hum and hum.Health > 0
+end
+
+local function updateESP()
+    if not (namesActive or distanceActive or outlinesActive) then return end
+
+    for plr, bill in pairs(nameBillboards) do if not bill or not bill.Parent then nameBillboards[plr] = nil end end
+    for plr, bill in pairs(distanceBillboards) do if not bill or not bill.Parent then distanceBillboards[plr] = nil end end
+    for plr, hl in pairs(outlineHighlights) do if not hl or not hl.Parent then outlineHighlights[plr] = nil end end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == localPlayer then continue end
+        local char = plr.Character
+        if not char or not char:FindFirstChild("Head") then continue end
+        local head = char.Head
+        local role = getPlayerRole(plr)
+        local alive = isPlayerAlive(plr)
+        local color = alive and (
+            role == "Murderer" and Color3.fromRGB(255,50,50) or
+            role == "Sheriff" and Color3.fromRGB(50,150,255) or
+            Color3.fromRGB(50,255,120)
+        ) or Color3.fromRGB(130,130,130)
+
+        local root = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local dist = root and math.floor((head.Position - root.Position).Magnitude) or 0
+
+        if namesActive then
+            if not nameBillboards[plr] then
+                local bg = Instance.new("BillboardGui") bg.Adornee = head bg.AlwaysOnTop = true bg.Size = UDim2.new(4,0,1.5,0) bg.StudsOffset = Vector3.new(0,3.5,0) bg.Parent = playerGui
+                local lbl = Instance.new("TextLabel") lbl.Size = UDim2.new(1,0,1,0) lbl.BackgroundTransparency = 1 lbl.TextStrokeTransparency = 0 lbl.TextStrokeColor3 = Color3.fromRGB(0,0,0) lbl.TextSize = 16 lbl.Font = Enum.Font.GothamBold lbl.Parent = bg
+                nameBillboards[plr] = bg
+            end
+            local bg = nameBillboards[plr]
+            bg.TextLabel.Text = "@" .. plr.Name
+            bg.TextLabel.TextColor3 = color
+        end
+
+        if distanceActive then
+            if not distanceBillboards[plr] then
+                local bg = Instance.new("BillboardGui") bg.Adornee = head bg.AlwaysOnTop = true bg.Size = UDim2.new(3,0,1,0) bg.StudsOffset = Vector3.new(0,5.5,0) bg.Parent = playerGui
+                local lbl = Instance.new("TextLabel") lbl.Size = UDim2.new(1,0,1,0) lbl.BackgroundTransparency = 1 lbl.TextStrokeTransparency = 0 lbl.TextStrokeColor3 = Color3.fromRGB(0,0,0) lbl.TextSize = 11 lbl.Font = Enum.Font.Gotham lbl.Parent = bg
+                distanceBillboards[plr] = bg
+            end
+            local bg = distanceBillboards[plr]
+            bg.TextLabel.Text = dist .. " studs"
+            bg.TextLabel.TextColor3 = color
+        end
+
+        if outlinesActive then
+            if not outlineHighlights[plr] then
+                local hl = Instance.new("Highlight") hl.Adornee = char hl.FillColor = Color3.fromRGB(180,100,255) hl.FillTransparency = 0.85 hl.OutlineColor = color hl.OutlineTransparency = 0 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop hl.Parent = playerGui
+                outlineHighlights[plr] = hl
+            end
+            local hl = outlineHighlights[plr]
+            hl.OutlineColor = color
+            hl.OutlineTransparency = alive and 0 or 0.6
+        end
+    end
+end
+
+local function startESP()
+    if espLink then return end
+    espLink = RunService.Heartbeat:Connect(updateESP)
+end
+
+local function stopESP()
+    if espLink then espLink:Disconnect() espLink = nil end
+    for _, v in pairs(nameBillboards) do v:Destroy() end
+    for _, v in pairs(distanceBillboards) do v:Destroy() end
+    for _, v in pairs(outlineHighlights) do v:Destroy() end
+    nameBillboards = {} distanceBillboards = {} outlineHighlights = {}
+end
+
+local function startHipHeightLoop()
+    if hipLoop then return end
+    hipLoop = RunService.Heartbeat:Connect(function()
+        local char = localPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then char.Humanoid.HipHeight = hipHeightValue end
+    end)
+end
+
+local function startSpeedLoop()
+    if speedLoop then return end
+    speedLoop = RunService.Heartbeat:Connect(function()
+        local char = localPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then char.Humanoid.WalkSpeed = speedValue end
+    end)
+end
+
+local function updateFly()
+    if flyConnection then flyConnection:Disconnect() end
+    if flyValue <= 0 then return end
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if flyValue <= 0 then return end
+        local char = localPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local cam = workspace.CurrentCamera
+        local move = Vector3.new(0,0,0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.new(0,1,0) end
+        if move.Magnitude > 0 then root.Velocity = move.Unit * flyValue else root.Velocity = Vector3.new(0,0,0) end
+    end)
+end
+
+local function handleTeleport(input)
+    if not teleportClickActive then return end
+    local char = localPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local mouse = game.Players.LocalPlayer:GetMouse()
+
+    if teleportMode == "LeftClick" and input.UserInputType == Enum.UserInputType.MouseButton1 then
+        root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 4, 0))
+    elseif teleportMode == "RightClick" and input.UserInputType == Enum.UserInputType.MouseButton2 then
+        root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 4, 0))
+    end
+end
+
+local function toggleTeleport(state)
+    teleportClickActive = state
+    if teleportConn then teleportConn:Disconnect() teleportConn = nil end
+    if state then
+        teleportConn = UserInputService.InputBegan:Connect(handleTeleport)
+    end
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 520, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -260, 0.5, -200)
+mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+mainFrame.Parent = screenGui
+
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local startPos = mainFrame.Position
+        local startMouse = input.Position
+        local conn = RunService.RenderStepped:Connect(function()
+            local delta = input.Position - startMouse
+            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end)
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then conn:Disconnect() end end)
+    end
+end)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 34)
+title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+title.Text = "110c"
+title.TextSize = 24
+title.Font = Enum.Font.GothamBlack
+title.Parent = mainFrame
+RunService.Heartbeat:Connect(function()
+    local t = tick() * 3
+    local r = math.sin(t) * 0.5 + 0.5
+    title.TextColor3 = Color3.fromRGB(255 * r, 20, 20 + 235 * (1 - r))
+end)
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 36, 0, 28)
+minBtn.Position = UDim2.new(1, -42, 0, 3)
+minBtn.BackgroundColor3 = Color3.fromRGB(255,255,255)
+minBtn.Text = "−"
+minBtn.TextColor3 = Color3.fromRGB(10,10,10)
+minBtn.TextSize = 18
+minBtn.Font = Enum.Font.GothamBold
+minBtn.Parent = mainFrame
+
+local miniIcon = Instance.new("TextButton")
+miniIcon.Size = UDim2.new(0, 65, 0, 36)
+miniIcon.Position = UDim2.new(0.5, -32.5, 0, 8)
+miniIcon.BackgroundColor3 = Color3.fromRGB(255,255,255)
+miniIcon.Text = "110c"
+miniIcon.TextColor3 = Color3.fromRGB(10,10,10)
+miniIcon.TextStrokeTransparency = 0
+miniIcon.TextStrokeColor3 = Color3.fromRGB(255,0,0)
+miniIcon.TextSize = 17
+miniIcon.Font = Enum.Font.GothamBold
+miniIcon.Visible = false
+miniIcon.Parent = screenGui
+
+local leftPanel = Instance.new("ScrollingFrame")
+leftPanel.Size = UDim2.new(0.58, 0, 1, -52)
+leftPanel.Position = UDim2.new(0, 12, 0, 42)
+leftPanel.BackgroundTransparency = 1
+leftPanel.ScrollBarThickness = 5
+leftPanel.ScrollBarImageColor3 = Color3.fromRGB(200,200,200)
+leftPanel.Parent = mainFrame
+
+local leftLayout = Instance.new("UIListLayout")
+leftLayout.Padding = UDim.new(0, 7)
+leftLayout.SortOrder = Enum.SortOrder.LayoutOrder
+leftLayout.Parent = leftPanel
+
+local rightPanel = Instance.new("Frame")
+rightPanel.Size = UDim2.new(0.38, 0, 1, -52)
+rightPanel.Position = UDim2.new(0.6, 8, 0, 42)
+rightPanel.BackgroundTransparency = 1
+rightPanel.Parent = mainFrame
+
+local rightTitle = Instance.new("TextLabel")
+rightTitle.Size = UDim2.new(1, 0, 0, 28)
+rightTitle.BackgroundTransparency = 1
+rightTitle.Text = "Teleport Settings"
+rightTitle.TextColor3 = Color3.fromRGB(255, 200, 100)
+rightTitle.TextSize = 15
+rightTitle.Font = Enum.Font.GothamBold
+rightTitle.Parent = rightPanel
+
+local rightScroll = Instance.new("ScrollingFrame")
+rightScroll.Size = UDim2.new(1, 0, 1, -32)
+rightScroll.Position = UDim2.new(0, 0, 0, 32)
+rightScroll.BackgroundTransparency = 1
+rightScroll.ScrollBarThickness = 5
+rightScroll.ScrollBarImageColor3 = Color3.fromRGB(200,200,200)
+rightScroll.Parent = rightPanel
+
+local rightLayout = Instance.new("UIListLayout")
+rightLayout.Padding = UDim.new(0, 6)
+rightLayout.SortOrder = Enum.SortOrder.LayoutOrder
+rightLayout.Parent = rightScroll
+
+local function createToggle(txt, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 34)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    frame.Parent = leftPanel
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.68, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = txt
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 14.5
+    label.Font = Enum.Font.GothamSemibold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    Instance.new("UIPadding", label).PaddingLeft = UDim.new(0, 14)
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.28, 0, 0.78, 0)
+    btn.Position = UDim2.new(0.69, 0, 0.11, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = "OFF"
+    btn.TextColor3 = Color3.fromRGB(10, 10, 10)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 13
+    btn.Parent = frame
+
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = state and "ON" or "OFF"
+        btn.BackgroundColor3 = state and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(255, 255, 255)
+        callback(state)
+    end)
+end
+
+local function createValueBox(txt, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 36)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    frame.Parent = leftPanel
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.52, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = txt
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 14.5
+    label.Font = Enum.Font.GothamSemibold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    Instance.new("UIPadding", label).PaddingLeft = UDim.new(0, 14)
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0.38, 0, 0.72, 0)
+    box.Position = UDim2.new(0.58, 0, 0.14, 0)
+    box.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    box.Text = tostring(default)
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.TextSize = 14
+    box.Font = Enum.Font.GothamBold
+    box.Parent = frame
+
+    box.FocusLost:Connect(function()
+        local num = tonumber(box.Text)
+        if num then
+            callback(num)
+            box.Text = tostring(num)
+        end
+    end)
+end
+
+createValueBox("HipHeight", hipHeightValue, function(v) hipHeightValue = math.clamp(v, -10, 20) end)
+createValueBox("Speed", speedValue, function(v) speedValue = math.clamp(v, 0, 200) end)
+createValueBox("Fly Speed", flyValue, function(v) flyValue = math.clamp(v, 0, 100) updateFly() end)
+
+createToggle("Teleport Click", toggleTeleport)
+
+local modeFrame = Instance.new("Frame")
+modeFrame.Size = UDim2.new(1, 0, 0, 80)
+modeFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+modeFrame.Parent = rightScroll
+
+local modeLabel = Instance.new("TextLabel")
+modeLabel.Size = UDim2.new(1, 0, 0, 24)
+modeLabel.BackgroundTransparency = 1
+modeLabel.Text = "Teleport Mode"
+modeLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+modeLabel.TextSize = 14
+modeLabel.Font = Enum.Font.GothamBold
+modeLabel.Parent = modeFrame
+
+local leftBtn = Instance.new("TextButton")
+leftBtn.Size = UDim2.new(0.45, 0, 0, 32)
+leftBtn.Position = UDim2.new(0.04, 0, 0, 32)
+leftBtn.BackgroundColor3 = (teleportMode == "LeftClick") and Color3.fromRGB(255,80,80) or Color3.fromRGB(40,40,40)
+leftBtn.Text = "Left Click"
+leftBtn.TextColor3 = Color3.fromRGB(255,255,255)
+leftBtn.TextSize = 13
+leftBtn.Font = Enum.Font.GothamSemibold
+leftBtn.Parent = modeFrame
+
+local rightBtn = Instance.new("TextButton")
+rightBtn.Size = UDim2.new(0.45, 0, 0, 32)
+rightBtn.Position = UDim2.new(0.51, 0, 0, 32)
+rightBtn.BackgroundColor3 = (teleportMode == "RightClick") and Color3.fromRGB(255,80,80) or Color3.fromRGB(40,40,40)
+rightBtn.Text = "Right Click"
+rightBtn.TextColor3 = Color3.fromRGB(255,255,255)
+rightBtn.TextSize = 13
+rightBtn.Font = Enum.Font.GothamSemibold
+rightBtn.Parent = modeFrame
+
+leftBtn.MouseButton1Click:Connect(function()
+    teleportMode = "LeftClick"
+    leftBtn.BackgroundColor3 = Color3.fromRGB(255,80,80)
+    rightBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+end)
+
+rightBtn.MouseButton1Click:Connect(function()
+    teleportMode = "RightClick"
+    rightBtn.BackgroundColor3 = Color3.fromRGB(255,80,80)
+    leftBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+end)
+
+createToggle("ESP Username", function(state) namesActive = state if namesActive or distanceActive or outlinesActive then startESP() else stopESP() end end)
+createToggle("Distance ESP", function(state) distanceActive = state if namesActive or distanceActive or outlinesActive then startESP() else stopESP() end end)
+createToggle("ESP Player", function(state) outlinesActive = state if namesActive or distanceActive or outlinesActive then startESP() else stopESP() end end)
+
+leftPanel.CanvasSize = UDim2.new(0, 0, 0, leftLayout.AbsoluteContentSize.Y + 20)
+rightScroll.CanvasSize = UDim2.new(0, 0, 0, rightLayout.AbsoluteContentSize.Y + 20)
+
+minBtn.MouseButton1Click:Connect(function() mainFrame.Visible = false miniIcon.Visible = true end)
+miniIcon.MouseButton1Click:Connect(function() miniIcon.Visible = false mainFrame.Visible = true end)
+
+miniIcon.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local startPos = miniIcon.Position
+        local startMouse = input.Position
+        local conn = RunService.RenderStepped:Connect(function()
+            local delta = input.Position - startMouse
+            miniIcon.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end)
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then conn:Disconnect() end end)
+    end
+end)
+
+print("Compact MM2 script loaded with Right Scroll Teleport Settings!")
+
+local char = localPlayer.Character
+if char and char:FindFirstChild("Humanoid") then
+    char.Humanoid.HipHeight = hipHeightValue
+    char.Humanoid.WalkSpeed = speedValue
+end
+
+startHipHeightLoop()
+startSpeedLoop()
+startESP()
+updateFly()
