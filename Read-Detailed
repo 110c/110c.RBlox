@@ -1,0 +1,19 @@
+Script contains the following features (Made specifically for Roblox) 
+
+● WalkSpeed (Customization 0 - 100+)
+● Fly (Cusomization 0 - 100)
+- FlySpeed is based on WalkSpeed
+- 0 disables fly feature
+● HipHeight 
+- (Customization 0.5 - 20) Above 20 wont work & Zero = impractical
+● Teleport
+- Toggle enables teleport click (Left Click or Right Click)
+● ESP
+- ESP @Username
+- Distance ESP (Studs)
+- ESP Player (Green/Blue/Red)
+ESP also works in MM2, Allows player to identify whether they are Innocent, Sheriff or Murderer without dying.
+ESP works smoothly in small servers but may have some trouble in regular/big sized servers (6 - 12) Players so disabling and reenabling from time to time will help.
+This script is clean and contains no item stealers.
+Please use responsibly and don't bully others.
+God bless.
